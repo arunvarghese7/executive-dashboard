@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Executive Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+        .loading { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script>
+        // ============================================
+        // CONFIGURATION - UPDATE THESE VALUES
+        // ============================================
+        const CONFIG = {
+            APPS_SCRIPT_URL: 'https://script.google.com/a/macros/moengage.com/s/AKfycbzK_mTwwnG2doOWazvL7ZY4o_aND6_axDnpsEvCR4wVYdisODppgwVfGcXlq-3wOeZU/exec',
+            API_SECRET: 'x7K9pL3mQ2wR8vT5nB1gH4jF6cD0sA',
+            USE_SAMPLE_DATA: true, // Set to false when ready for production
+            REFRESH_INTERVAL: 300000 // 5 minutes
+        };
+
+        // ============================================
+        // SAMPLE DATA (for testing)
+        // ============================================
+        const SAMPLE_DATA = [
+            { Task: 'API Integration', SubTask: 'User Auth Module', Engineer: 'Alice Johnson', Status: 'Completed', StartDate: '2024-10-01', ClosureDate: '2024-10-15', Blocker: '' },
+            { Task: 'API Integration', SubTask: 'Payment Gateway', Engineer: 'Bob Smith', Status: 'In Progress', StartDate: '2024-10-10', ClosureDate: '', Blocker: '' },
+            { Task: 'Database Migration', SubTask: 'Schema Design', Engineer: 'Carol Davis', Status: 'Completed', StartDate: '2024-09-15', ClosureDate: '2024-09-30', Blocker: '' },
+            { Task: 'Database Migration', SubTask: 'Data Transfer', Engineer: 'David Lee', Status: 'Blocked', StartDate: '2024-10-01', ClosureDate: '', Blocker: 'Waiting for infrastructure approval' },
+            { Task: 'Frontend Redesign', SubTask: 'Homepage Layout', Engineer: 'Emma Wilson', Status: 'Completed', StartDate: '2024-11-01', ClosureDate: '2024-11-10', Blocker: '' },
+            { Task: 'Frontend Redesign', SubTask: 'Dashboard Components', Engineer: 'Frank Brown', Status: 'In Progress', StartDate: '2024-11-05', ClosureDate: '', Blocker: '' },
+            { Task: 'Mobile App', SubTask: 'iOS Development', Engineer: 'Grace Taylor', Status: 'In Progress', StartDate: '2024-10-20', ClosureDate: '', Blocker: '' },
+            { Task: 'Mobile App', SubTask: 'Android Development', Engineer: 'Henry Clark', Status: 'Not Started', StartDate: '2024-11-15', ClosureDate: '', Blocker: 'Waiting for designs' },
+        ];
+
+        // ============================================
+        // DASHBOARD APPLICATION
+        // ============================================
+        class Dashboard {
+            constructor() {
+                this.data = [];
+                this.filteredData = [];
+                this.selectedQuarter = 'current';
+                this.selectedEngineer = 'all';
+                this.selectedStatus = 'all';
+                this.dateRange = { start: '', end: '' };
+                this.init();
+            }
+
+            async init() {
+                await this.loadData();
+                this.render();
+                this.attachEventListeners();
+                setInterval(() => this.loadData(), CONFIG.REFRESH_INTERVAL);
+            }
+
+            async loadData() {
+                try {
+                    if (CONFIG.USE_SAMPLE_DATA) {
+                        this.data = SAMPLE_DATA;
+                    } else {
+                        const url = `${CONFIG.APPS_SCRIPT_URL}?key=${CONFIG.API_SECRET}`;
+                        const response = await fetch(url);
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            this.data = result.data;
+                        } else {
+                            throw new Error(result.message || 'Failed to load data');
+                        }
+                    }
+                    this.applyFilters();
+                } catch (error) {
+                    console.error('Error loading data:', error);
+                    this.showError(error.message);
+                }
+            }
+
+            applyFilters() {
+                let filtered = [...this.data];
+
+                // Quarter filter
+                if (this.selectedQuarter !== 'all') {
+                    const range = this.getQuarterDateRange(this.selectedQuarter);
+                    filtered = filtered.filter(item => {
+                        const startDate = new Date(item.StartDate);
+                        return startDate >= range.start && startDate <= range.end;
+                    });
+                }
+
+                // Engineer filter
+                if (this.selectedEngineer !== 'all') {
+                    filtered = filtered.filter(item => item.Engineer === this.selectedEngineer);
+                }
+
+                // Status filter
+                if (this.selectedStatus !== 'all') {
+                    filtered = filtered.filter(item => item.Status === this.selectedStatus);
+                }
+
+                // Custom date range
+                if (this.dateRange.start && this.dateRange.end) {
+                    const start = new Date(this.dateRange.start);
+                    const end = new Date(this.dateRange.end);
+                    filtered = filtered.filter(item => {
+                        const itemDate = new Date(item.StartDate);
+                        return itemDate >= start && itemDate <= end;
+                    });
+                }
+
+                this.filteredData = filtered;
+                this.updateDashboard();
+            }
+
+            getQuarterDateRange(quarterValue) {
+                if (quarterValue === 'current') {
+                    const now = new Date();
+                    const quarter = Math.floor(now.getMonth() / 3) + 1;
+                    quarterValue = `${now.getFullYear()}-Q${quarter}`;
+                }
+                const [year, q] = quarterValue.split('-Q');
+                const quarter = parseInt(q);
+                const startMonth = (quarter - 1) * 3;
+                const endMonth = startMonth + 2;
+                return {
+                    start: new Date(year, startMonth, 1),
+                    end: new Date(year, endMonth + 1, 0)
+                };
+            }
+
+            calculateMetrics() {
+                const completed = this.filteredData.filter(d => d.Status === 'Completed').length;
+                const inProgress = this.filteredData.filter(d => d.Status === 'In Progress').length;
+                const blocked = this.filteredData.filter(d => d.Status === 'Blocked').length;
+                const notStarted = this.filteredData.filter(d => d.Status === 'Not Started').length;
+                const total = this.filteredData.length;
+                
+                const uniqueTasks = new Set(this.filteredData.map(d => d.Task)).size;
+                const uniqueEngineers = new Set(this.filteredData.map(d => d.Engineer)).size;
+                const blockers = this.filteredData.filter(d => d.Blocker && d.Blocker.trim() !== '').length;
+
+                const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+                return { total, completed, inProgress, blocked, notStarted, uniqueTasks, uniqueEngineers, blockers, completionRate };
+            }
+
+            getEngineerPerformance() {
+                const engineers = {};
+                this.filteredData.forEach(item => {
+                    if (!engineers[item.Engineer]) {
+                        engineers[item.Engineer] = { name: item.Engineer, total: 0, completed: 0, inProgress: 0, blocked: 0 };
+                    }
+                    engineers[item.Engineer].total++;
+                    if (item.Status === 'Completed') engineers[item.Engineer].completed++;
+                    if (item.Status === 'In Progress') engineers[item.Engineer].inProgress++;
+                    if (item.Status === 'Blocked') engineers[item.Engineer].blocked++;
+                });
+
+                return Object.values(engineers).map(eng => ({
+                    ...eng,
+                    completionRate: eng.total > 0 ? Math.round((eng.completed / eng.total) * 100) : 0
+                })).sort((a, b) => b.completionRate - a.completionRate);
+            }
+
+            getTaskBreakdown() {
+                const tasks = {};
+                this.filteredData.forEach(item => {
+                    if (!tasks[item.Task]) {
+                        tasks[item.Task] = { name: item.Task, subtasks: 0, completed: 0, total: 0 };
+                    }
+                    tasks[item.Task].total++;
+                    tasks[item.Task].subtasks++;
+                    if (item.Status === 'Completed') tasks[item.Task].completed++;
+                });
+
+                return Object.values(tasks).map(task => ({
+                    ...task,
+                    progress: task.total > 0 ? Math.round((task.completed / task.total) * 100) : 0
+                })).sort((a, b) => b.total - a.total);
+            }
+
+            exportToCSV() {
+                const headers = ['Task', 'Sub-Task', 'Engineer', 'Status', 'Start Date', 'Closure Date', 'Blocker/Dependency'];
+                const rows = this.filteredData.map(item => [
+                    item.Task, item.SubTask, item.Engineer, item.Status,
+                    item.StartDate, item.ClosureDate || '-', item.Blocker || '-'
+                ]);
+
+                const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `team-activity-${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+
+            getQuarters() {
+                const currentYear = new Date().getFullYear();
+                const quarters = [];
+                for (let year = currentYear - 1; year <= currentYear + 1; year++) {
+                    for (let q = 1; q <= 4; q++) {
+                        quarters.push({ label: `Q${q} ${year}`, value: `${year}-Q${q}` });
+                    }
+                }
+                return quarters;
+            }
+
+            render() {
+                const root = document.getElementById('root');
+                root.innerHTML = `
+                    <div class="min-h-screen bg-gray-50 p-6">
+                        <!-- Header -->
+                        <div class="mb-6">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <h1 class="text-4xl font-bold text-gray-900 mb-2">📊 Executive Dashboard</h1>
+                                    <p class="text-gray-600">Team Activity & Performance Insights</p>
+                                </div>
+                                <div class="text-right">
+                                    <button id="refreshBtn" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 mb-2">
+                                        🔄 Refresh
+                                    </button>
+                                    <div class="text-sm text-gray-500">
+                                        Last updated: <span id="lastUpdate">${new Date().toLocaleTimeString()}</span>
+                                    </div>
+                                    <div class="text-xs mt-1">
+                                        <span class="${CONFIG.USE_SAMPLE_DATA ? 'bg-orange-100 text-orange-800' : 'bg-green-100 text-green-800'} px-2 py-1 rounded">
+                                            ${CONFIG.USE_SAMPLE_DATA ? '🎨 Demo Mode' : '🔴 Live Data'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Filters -->
+                        <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+                            <div class="flex items-center mb-4">
+                                <span class="text-lg font-semibold text-gray-900">🔍 Filters</span>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Quarter</label>
+                                    <select id="quarterFilter" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                                        <option value="current">Current Quarter</option>
+                                        <option value="all">All Time</option>
+                                        ${this.getQuarters().slice(-8).map(q => `<option value="${q.value}">${q.label}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Engineer</label>
+                                    <select id="engineerFilter" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                                        <option value="all">All Engineers</option>
+                                        ${[...new Set(this.data.map(d => d.Engineer))].sort().map(eng => `<option value="${eng}">${eng}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                                    <select id="statusFilter" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                                        <option value="all">All Status</option>
+                                        <option value="Completed">Completed</option>
+                                        <option value="In Progress">In Progress</option>
+                                        <option value="Blocked">Blocked</option>
+                                        <option value="Not Started">Not Started</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                                    <input type="date" id="startDate" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                                    <input type="date" id="endDate" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                                </div>
+                            </div>
+                            <div class="mt-4 flex justify-end">
+                                <button id="exportBtn" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                                    📥 Export Quarter Data
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Metrics -->
+                        <div id="metrics"></div>
+
+                        <!-- Charts -->
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                            <div id="engineerPerformance" class="bg-white rounded-lg shadow-lg p-6"></div>
+                            <div id="taskBreakdown" class="bg-white rounded-lg shadow-lg p-6"></div>
+                        </div>
+
+                        <!-- Data Table -->
+                        <div id="dataTable" class="bg-white rounded-lg shadow-lg p-6"></div>
+                    </div>
+                `;
+            }
+
+            updateDashboard() {
+                const metrics = this.calculateMetrics();
+                const engineerPerf = this.getEngineerPerformance();
+                const taskBreakdown = this.getTaskBreakdown();
+
+                // Update metrics
+                document.getElementById('metrics').innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+                        <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
+                            <div class="text-sm font-medium opacity-90 mb-2">Total Tasks</div>
+                            <div class="text-3xl font-bold">${metrics.total}</div>
+                            <div class="text-sm opacity-75 mt-1">${metrics.uniqueTasks} main tasks</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-6 text-white">
+                            <div class="text-sm font-medium opacity-90 mb-2">Completed</div>
+                            <div class="text-3xl font-bold">${metrics.completed}</div>
+                            <div class="text-sm opacity-75 mt-1">${metrics.completionRate}% completion</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg shadow-lg p-6 text-white">
+                            <div class="text-sm font-medium opacity-90 mb-2">In Progress</div>
+                            <div class="text-3xl font-bold">${metrics.inProgress}</div>
+                            <div class="text-sm opacity-75 mt-1">Active work</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-red-500 to-red-600 rounded-lg shadow-lg p-6 text-white">
+                            <div class="text-sm font-medium opacity-90 mb-2">Blocked</div>
+                            <div class="text-3xl font-bold">${metrics.blocked}</div>
+                            <div class="text-sm opacity-75 mt-1">${metrics.blockers} with blockers</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+                            <div class="text-sm font-medium opacity-90 mb-2">Engineers</div>
+                            <div class="text-3xl font-bold">${metrics.uniqueEngineers}</div>
+                            <div class="text-sm opacity-75 mt-1">Team members</div>
+                        </div>
+                    </div>
+                `;
+
+                // Update engineer performance
+                document.getElementById('engineerPerformance').innerHTML = `
+                    <h2 class="text-xl font-bold text-gray-900 mb-4">👥 Engineer Performance</h2>
+                    <div class="space-y-3">
+                        ${engineerPerf.map(eng => `
+                            <div class="border-b border-gray-100 pb-3">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="font-medium text-gray-900">${eng.name}</span>
+                                    <span class="text-sm text-gray-600">${eng.completed}/${eng.total} completed</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="flex-1 bg-gray-200 rounded-full h-2">
+                                        <div class="bg-gradient-to-r from-green-400 to-green-600 h-2 rounded-full" style="width: ${eng.completionRate}%"></div>
+                                    </div>
+                                    <span class="text-sm font-semibold text-gray-700 w-12 text-right">${eng.completionRate}%</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+
+                // Update task breakdown
+                document.getElementById('taskBreakdown').innerHTML = `
+                    <h2 class="text-xl font-bold text-gray-900 mb-4">📈 Task Progress</h2>
+                    <div class="space-y-4">
+                        ${taskBreakdown.map(task => `
+                            <div class="border-b border-gray-100 pb-4">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="font-medium text-gray-900">${task.name}</span>
+                                    <span class="text-sm text-gray-600">${task.subtasks} subtasks</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="flex-1 bg-gray-200 rounded-full h-3">
+                                        <div class="bg-gradient-to-r from-blue-400 to-blue-600 h-3 rounded-full" style="width: ${task.progress}%"></div>
+                                    </div>
+                                    <span class="text-sm font-bold text-gray-700 w-12 text-right">${task.progress}%</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+
+                // Update data table
+                const statusColors = {
+                    'Completed': 'bg-green-100 text-green-800',
+                    'In Progress': 'bg-blue-100 text-blue-800',
+                    'Blocked': 'bg-red-100 text-red-800',
+                    'Not Started': 'bg-gray-100 text-gray-800'
+                };
+
+                document.getElementById('dataTable').innerHTML = `
+                    <h2 class="text-xl font-bold text-gray-900 mb-4">📋 Detailed Activity Log</h2>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead>
+                                <tr class="border-b-2 border-gray-200">
+                                    <th class="text-left py-3 px-2 text-sm font-semibold text-gray-700">Task</th>
+                                    <th class="text-left py-3 px-2 text-sm font-semibold text-gray-700">Sub-Task</th>
+                                    <th class="text-left py-3 px-2 text-sm font-semibold text-gray-700">Engineer</th>
+                                    <th class="text-center py-3 px-2 text-sm font-semibold text-gray-700">Status</th>
+                                    <th class="text-center py-3 px-2 text-sm font-semibold text-gray-700">Start Date</th>
+                                    <th class="text-center py-3 px-2 text-sm font-semibold text-gray-700">Closure Date</th>
+                                    <th class="text-left py-3 px-2 text-sm font-semibold text-gray-700">Blocker</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${this.filteredData.map(item => `
+                                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                                        <td class="py-3 px-2 text-sm text-gray-900">${item.Task}</td>
+                                        <td class="py-3 px-2 text-sm text-gray-700">${item.SubTask}</td>
+                                        <td class="py-3 px-2 text-sm text-gray-900">${item.Engineer}</td>
+                                        <td class="py-3 px-2 text-center">
+                                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${statusColors[item.Status]}">
+                                                ${item.Status}
+                                            </span>
+                                        </td>
+                                        <td class="py-3 px-2 text-center text-sm text-gray-700">${item.StartDate}</td>
+                                        <td class="py-3 px-2 text-center text-sm text-gray-700">${item.ClosureDate || '-'}</td>
+                                        <td class="py-3 px-2 text-sm text-gray-600">${item.Blocker || '-'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            attachEventListeners() {
+                document.getElementById('refreshBtn').addEventListener('click', () => this.loadData());
+                document.getElementById('exportBtn').addEventListener('click', () => this.exportToCSV());
+                document.getElementById('quarterFilter').addEventListener('change', (e) => {
+                    this.selectedQuarter = e.target.value;
+                    this.applyFilters();
+                });
+                document.getElementById('engineerFilter').addEventListener('change', (e) => {
+                    this.selectedEngineer = e.target.value;
+                    this.applyFilters();
+                });
+                document.getElementById('statusFilter').addEventListener('change', (e) => {
+                    this.selectedStatus = e.target.value;
+                    this.applyFilters();
+                });
+                document.getElementById('startDate').addEventListener('change', (e) => {
+                    this.dateRange.start = e.target.value;
+                    this.applyFilters();
+                });
+                document.getElementById('endDate').addEventListener('change', (e) => {
+                    this.dateRange.end = e.target.value;
+                    this.applyFilters();
+                });
+            }
+
+            showError(message) {
+                const root = document.getElementById('root');
+                root.innerHTML = `
+                    <div class="min-h-screen flex items-center justify-center">
+                        <div class="text-center">
+                            <div class="text-6xl mb-4">⚠️</div>
+                            <h2 class="text-2xl font-bold text-red-600 mb-2">Error Loading Data</h2>
+                            <p class="text-gray-600 mb-4">${message}</p>
+                            <button onclick="location.reload()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                Retry
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Initialize dashboard when page loads
+        window.addEventListener('DOMContentLoaded', () => {
+            new Dashboard();
+        });
+    </script>
+</body>
+</html>
